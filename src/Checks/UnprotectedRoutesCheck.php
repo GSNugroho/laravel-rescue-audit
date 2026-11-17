@@ -34,6 +34,7 @@ class UnprotectedRoutesCheck implements Check
         $authMiddleware = $this->config['auth_middleware'] ?? ['auth'];
 
         $noAuth = [];
+        $tokenOnly = [];
         $noThrottle = [];
         $total = 0;
 
@@ -59,7 +60,11 @@ class UnprotectedRoutesCheck implements Check
 
             $isWrite = (bool) array_intersect($methods, ['POST', 'PUT', 'PATCH', 'DELETE']);
             if ($isWrite && ! $this->hasAuth($middlewareNames, $declared, $authMiddleware)) {
-                $noAuth[] = $label;
+                if ($this->looksTokenProtected($uri)) {
+                    $tokenOnly[] = $label;
+                } else {
+                    $noAuth[] = $label;
+                }
             }
 
             if (! $this->hasThrottle($middlewareNames, $declared)) {
@@ -81,6 +86,19 @@ class UnprotectedRoutesCheck implements Check
             );
         }
 
+        if ($tokenOnly) {
+            $findings[] = new Finding(
+                check: $this->name(),
+                severity: Severity::Medium,
+                title: count($tokenOnly).' write route(s) rely only on a URL token instead of auth middleware',
+                detail: 'Invitation, password-reset and "confirm" links are usually meant to be public, but the token is then '
+                    .'the only protection. Make sure it is long and random (Str::random(40)+), expires, is single-use, '
+                    .'and that the route is throttled so tokens cannot be guessed.',
+                items: $tokenOnly,
+                hours: 0.5,
+            );
+        }
+
         if ($noThrottle && $total > 0) {
             $ratio = count($noThrottle) / $total;
             $findings[] = new Finding(
@@ -98,9 +116,14 @@ class UnprotectedRoutesCheck implements Check
         return $findings;
     }
 
+    protected function looksTokenProtected(string $uri): bool
+    {
+        return (bool) preg_match('/\{(token|signature|hash|code|uuid|key|secret)\}/i', $uri);
+    }
+
     protected function isInternal(string $uri): bool
     {
-        return Str::startsWith($uri, ['_debugbar', '_ignition', 'sanctum/', 'livewire/', 'telescope', 'horizon', 'pulse', 'storage/'])
+        return Str::startsWith($uri, ['_debugbar', '_ignition', 'sanctum/', 'livewire/', 'livewire-', 'flux/', 'telescope', 'horizon', 'pulse', 'storage/', 'vendor/'])
             || $uri === '/'
             || $uri === '{fallbackPlaceholder}';
     }
@@ -112,13 +135,13 @@ class UnprotectedRoutesCheck implements Check
     protected function isFrameworkRoute(Route $route): bool
     {
         $name = (string) $route->getName();
-        if ($name !== '' && Str::startsWith($name, ['storage.', 'sanctum.', 'horizon.', 'telescope.', 'pulse.', 'livewire.', 'ignition.'])) {
+        if ($name !== '' && Str::startsWith($name, ['storage.', 'sanctum.', 'horizon.', 'telescope.', 'pulse.', 'livewire.', 'flux.', 'filament.', 'ignition.'])) {
             return true;
         }
 
         $action = $route->getAction();
         $uses = $action['controller'] ?? ($action['uses'] ?? null);
-        if (is_string($uses) && Str::startsWith($uses, ['Illuminate\\', 'Laravel\\', 'Livewire\\', 'Spatie\\LaravelIgnition\\'])) {
+        if (is_string($uses) && Str::startsWith($uses, ['Illuminate\\', 'Laravel\\', 'Livewire\\', 'Flux\\', 'Filament\\', 'Spatie\\LaravelIgnition\\'])) {
             return true;
         }
 

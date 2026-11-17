@@ -34,6 +34,7 @@ class NPlusOneCheck implements Check
     public function run(): array
     {
         $eager = $this->eagerLoadedRelations();
+        $relations = $this->declaredRelations();
         $suspects = [];
 
         foreach (Files::find($this->basePath, $this->viewPaths, '.blade.php') as $path) {
@@ -53,7 +54,10 @@ class NPlusOneCheck implements Check
                 // $post->author->name  or  $post->comments->count()  (skip ->count on scalars is fine)
                 if (preg_match_all('/\$'.preg_quote($var, '/').'->(\w+)(?:->|\(\)->)/', $body, $m)) {
                     foreach (array_unique($m[1]) as $relation) {
-                        if ($this->isNotARelation($relation)) {
+                        // Only names that are declared as relation methods on some model count;
+                        // everything else ($invoice->due_date->format(), $log->action->label()) is
+                        // a cast, accessor or enum.
+                        if ($this->isNotARelation($relation) || ! isset($relations[$relation])) {
                             continue;
                         }
                         if (! isset($eager[$relation])) {
@@ -85,6 +89,32 @@ class NPlusOneCheck implements Check
                 $items,
             ),
         ];
+    }
+
+    /**
+     * Method names under app/ whose body returns an Eloquent relation
+     * (hasMany, belongsTo, morphTo...). Only these can be lazy-loaded.
+     *
+     * @return array<string,true>
+     */
+    protected function declaredRelations(): array
+    {
+        $names = [];
+        $pattern = '/function\s+(\w+)\s*\([^)]*\)\s*(?::\s*[\\\\\w|?]+)?\s*\{(?:(?!function\s)[^{}]|\{[^{}]*\})*?return\s+\$this->(?:hasOne|hasMany|belongsTo|belongsToMany|hasOneThrough|hasManyThrough|morphOne|morphMany|morphTo|morphToMany|morphedByMany|hasOneOfMany|latestOfMany|oldestOfMany|ofMany)\s*\(/s';
+
+        foreach (Files::find($this->basePath, $this->appPaths, '.php') as $path) {
+            $src = file_get_contents($path);
+            if (! str_contains($src, '$this->has') && ! str_contains($src, '$this->belongsTo') && ! str_contains($src, '$this->morph')) {
+                continue;
+            }
+            if (preg_match_all($pattern, $src, $m)) {
+                foreach ($m[1] as $n) {
+                    $names[$n] = true;
+                }
+            }
+        }
+
+        return $names;
     }
 
     /** @return array<string,true> relation names seen in with()/load()/withCount() anywhere in app/. */

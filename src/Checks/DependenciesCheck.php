@@ -122,8 +122,10 @@ class DependenciesCheck implements Check
                 $this->name(),
                 Severity::High,
                 count($advisories).' package(s) have known security advisories (composer audit)',
-                'Update the affected packages (composer update vendor/package) and re-run composer audit.',
+                'Update the affected packages (composer update vendor/package) and re-run composer audit. '
+                    .'Usually a minor-version bump; budget extra time only if a package is several majors behind.',
                 $advisories,
+                hours: 2.0,
             );
         }
 

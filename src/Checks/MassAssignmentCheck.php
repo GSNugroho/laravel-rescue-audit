@@ -107,8 +107,13 @@ class MassAssignmentCheck implements Check
 
     protected function looksLikeModel(string $src): bool
     {
-        return (bool) preg_match('/extends\s+(Model|Authenticatable|Pivot|MorphPivot)\b/', $src)
-            || str_contains($src, 'Illuminate\Database\Eloquent\Model');
+        // Must be a concrete class that extends an Eloquent base class; traits, policies,
+        // services etc. that merely import the Model class are not models.
+        if (preg_match('/^\s*(?:abstract\s+)?trait\s+\w+/m', $src) || preg_match('/^\s*interface\s+\w+/m', $src)) {
+            return false;
+        }
+
+        return (bool) preg_match('/\bclass\s+\w+\s+extends\s+\\\\?(?:[\w\\\\]+\\\\)?(Model|Authenticatable|Pivot|MorphPivot|User)\b/', $src);
     }
 
     /** @return array<int,string> */

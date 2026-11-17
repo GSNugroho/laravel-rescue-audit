@@ -49,6 +49,27 @@ class ChecksTest extends TestCase
         $this->assertNotContains(Severity::Critical, $severities);
     }
 
+    public function test_token_routes_and_asset_routes_are_not_critical(): void
+    {
+        Route::post('/isi-data/{token}', fn () => 'x');            // token-protected → medium, not critical
+        Route::post('/atur-ulang-sandi/{token}', fn () => 'x');
+        Route::get('/flux/flux.js', fn () => 'x');                 // package asset → ignored
+        Route::get('/livewire-abc123/js/{component}.js', fn () => 'x');
+
+        $findings = $this->byTitle((new UnprotectedRoutesCheck($this->app['router'], config('rescue-audit')))->run());
+        $titles = array_keys($findings);
+
+        $this->assertContains('2 write route(s) rely only on a URL token instead of auth middleware', $titles);
+        $this->assertFalse((bool) preg_grep('/without any auth middleware/', $titles));
+
+        foreach ($findings as $f) {
+            foreach ($f->items as $item) {
+                $this->assertStringNotContainsString('/flux/', $item);
+                $this->assertStringNotContainsString('/livewire-', $item);
+            }
+        }
+    }
+
     public function test_dangerous_config_in_production(): void
     {
         config([
@@ -126,5 +147,8 @@ class ChecksTest extends TestCase
         $this->assertStringContainsString('$post->comments', $item);
         $this->assertStringContainsString('$comment->user', $item);
         $this->assertStringNotContainsString('$post->tags', $item);
+        // casts / enums are not relations
+        $this->assertStringNotContainsString('published_at', $item);
+        $this->assertStringNotContainsString('status', $item);
     }
 }
