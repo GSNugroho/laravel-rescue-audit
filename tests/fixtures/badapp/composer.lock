@@ -1,0 +1,8 @@
+{
+  "packages": [
+    {"name": "laravel/framework", "version": "v8.83.27"},
+    {"name": "barryvdh/laravel-debugbar", "version": "v3.9.2"}
+  ],
+  "packages-dev": [],
+  "platform": {"php": "^7.3|^8.0"}
+}
